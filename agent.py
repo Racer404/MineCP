@@ -30,6 +30,8 @@ class Agent:
         self.memPrompt = None
         self.context:list = []
 
+        self.contextLimit = 1000
+
     def setSystemPrompt(self, sysPrompt:str):
         defineSystem = "#This is a persistent instruction that establishes the your role as an assistant, behavioral rules, operational constraints, and response style. Taking precedence over user prompts whenever conflicts arise. Instructions as follows: "
         prompt = dict()
@@ -73,47 +75,50 @@ class Agent:
         self.context.append(prompt)
 
     def updateMem(self, maxWords:int=500):
-        finalMessage = []
+        final_prompt = []
         defineSummarize = f"You are maintaining the long-term memory of an AI assistant for a Minecraft server; summarize the conversation into persistent memory, keeping only information useful for future conversations, including user preferences, player identities, important decisions, long-term goals, server-specific facts, and ongoing projects; remove temporary dialogue, casual chat, greetings, small talk, one-time questions, temporary game events, and repeated information; merge duplicates; when memory conflicts with newer information, keep the newer information; output only the concise summarized memory, no longer than {maxWords} words."
         sysPrompt = dict()
         sysPrompt["role"] = "system"
         sysPrompt["content"] = defineSummarize
 
-        finalMessage.append(sysPrompt)
+        final_prompt.append(sysPrompt)
 
         if self.memPrompt:
-            finalMessage.append(self.memPrompt)
+            final_prompt.append(self.memPrompt)
 
-        finalMessage += self.context
+        final_prompt += self.context
 
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=finalMessage,
+            messages=final_prompt,
             stream=self.stream,
             extra_body=self.extra_body
         )
         newMem = str(response.choices[0].message.content)
         self.setMemoryPrompt(newMem)
-        breakpoint()
+        self.context: list = []
 
-    def chatSend(self) -> ChatCompletion:
-        finalMessage = []
+    def stepPrompt(self) -> ChatCompletion:
+        final_prompt = []
         if self.sysPrompt:
-            finalMessage.append(self.sysPrompt)
+            final_prompt.append(self.sysPrompt)
         if self.knlgPrompt:
-            finalMessage.append(self.knlgPrompt)
+            final_prompt.append(self.knlgPrompt)
         if self.memPrompt:
-            finalMessage.append(self.memPrompt)
-        finalMessage += self.context
+            final_prompt.append(self.memPrompt)
+        final_prompt += self.context
 
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=finalMessage,
+            messages=final_prompt,
             stream=self.stream,
             extra_body=self.extra_body
         )
-
         self.recordResponse(response)
+
+        if response.usage.prompt_cache_miss_tokens > self.contextLimit:
+            print("NEED UPDATE MEM")
+        print(response.choices[0].message.content)
         return response
 
 
@@ -131,10 +136,4 @@ agent.setKnowledgePrompt("你知道Minecraft的所有知识，你所在的拉杆
                          "ip地址是mc.racer.fund(上海)，当用户从境外连接时也可以使用"
                          "hkmc.racer.fund(香港)。")
 
-agent.addContext("你是谁")
-agent.addContext("Steve was drown", username="Steve", contextType="Event")
-agent.chatSend()
-
-agent.updateMem(100)
-
-breakpoint()
+agent.stepPrompt()
