@@ -1,9 +1,10 @@
+from typing import Callable
+
 import websocket
 import requests
 import threading
 import time
 import json
-import os
 
 class Bot:
     def __init__(self, app_id:str='', client_secret:str=''):
@@ -14,6 +15,7 @@ class Bot:
         self.token_safety_time_margin = 50.
         self.agreed_heartbeat_interval = 60
         self.heartbeat_payload_d = None
+        self.group_at_message_callback:Callable[[str],None] | None = None
 
     def update_access_token(self):
         time_now = time.time()
@@ -39,8 +41,18 @@ class Bot:
         terminal = response.json()['url']
         return terminal
 
-    def listenToSocket(self, url):
+    def replyGroupRawText(self, group_openid:str, content:str, msg_id:str):
+        api = f"https://api.bot.qq.com/v2/groups/{group_openid}/messages"
+        header = {"Authorization": "QQBot " + self.access_token}
+        payload = {
+            "msg_type": 0,
+            "content": content,
+            "msg_id" : msg_id
+        }
+        response = requests.post(api, headers=header, json=payload)
+        return response
 
+    def listenToSocket(self, url):
         def on_message(socket, message):
             print(f"Received: {message}")
             op_ = json.loads(message)['op']
@@ -66,37 +78,17 @@ class Bot:
                     print("Handshake successfully")
                     self.heartbeat_payload_d = "null"
 
+                if t_ == 'GROUP_AT_MESSAGE_CREATE':
+                    self.heartbeat_payload_d = json.loads(message)['s']
+                    if self.group_at_message_callback is not None:
+                        self.group_at_message_callback(message)
 
             elif op_ == 11:
                 print("pong")
 
-        def on_error(error):
-            print(f"Error: {error}")
-
-        def on_close(socket, close_status_code, close_msg):
-            print("Connection closed")
-
-        def on_open(socket):
-            print("Connected to server")
-            payload = {
-                "op": 2,
-                "d": {
-                    "token": f"QQBot {bot.access_token}",
-                    "intents": 513,
-                    "shard": [0, 4],
-                    "properties": {
-                        "$os": "linux",
-                        "$browser": "my_library",
-                        "$device": "my_library"
-                    }
-                }
-            }
-            ws.send(json.dumps(payload))
-
         def heartbeat(socket):
             while True:
                 print("heartbeat function")
-                self.agreed_heartbeat_interval = 10
                 time.sleep(self.agreed_heartbeat_interval)
 
                 if self.heartbeat_payload_d:
@@ -106,8 +98,6 @@ class Bot:
                     }
                     socket.send(json.dumps(heartbeat_payload))
                     print("ping")
-                    self.heartbeat_payload_d = None
-
 
         ws = websocket.WebSocketApp(url)
         ws.on_message = on_message
@@ -120,11 +110,3 @@ class Bot:
         ).start()
 
         ws.run_forever()
-
-secret = str(os.getenv('QQ_APP_SECRET'))
-bot = Bot('1905231300', secret)
-
-bot.update_access_token()
-wssTerminal = bot.getWebSocketTerminal()
-
-bot.listenToSocket(wssTerminal)

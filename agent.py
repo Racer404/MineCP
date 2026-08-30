@@ -1,4 +1,5 @@
 import os
+from bdb import Breakpoint
 
 from openai import OpenAI
 from openai.types.chat import ChatCompletion
@@ -14,10 +15,10 @@ def get_current_time() -> str:
     return datetime.now().strftime("%Y-%m-%d-%H-%M")
 
 class Agent:
-    def __init__(self, client:OpenAI = None, model:str = "deepseek-v4-flash", stream:bool=False, reasoning_effort:str = "high",
-                 extra_body=None):
-        if extra_body is None:
-            extra_body = {"thinking": {"type": "disabled"}}
+    def __init__(self, client:OpenAI = None, model:str = "deepseek-v4-flash", stream:bool=False, reasoning_effort:str = "high", thinking:bool=False):
+        extra_body = {"thinking": {"type": "disabled"}}
+        if thinking:
+            extra_body = {"thinking": {"type": "enabled"}}
 
         self.client = client
         self.model = model
@@ -31,6 +32,7 @@ class Agent:
         self.context:list = []
 
         self.contextLimit = 1000
+        self.maxMemWords = 500
 
     def setSystemPrompt(self, sysPrompt:str):
         defineSystem = "#This is a persistent instruction that establishes the your role as an assistant, behavioral rules, operational constraints, and response style. Taking precedence over user prompts whenever conflicts arise. Instructions as follows: "
@@ -53,30 +55,30 @@ class Agent:
         prompt["content"] = defineMemory + memPrompt
         self.memPrompt = prompt
 
-    def addContext(self, context:str, role:str = "user", username:str = "Unknown", contextType:str = "Unknown", timestamp:str = "Unknown"):
+    def addContext(self, context:str, role:str = "user", username:str = "Unknown", contextType:str = "Unknown"):
         defineType = "Context Type: "
         defineUser = "Sender: "
         defineTime = "Timestamp: "
+        defineMessage = "Message: "
         prompt = dict()
         prompt["role"] = role
         if username:
             prompt["name"] = username
         prompt["content"] = (defineType + contextType + ", " +
                              defineUser + username +", " +
-                             defineTime + timestamp + ", " +
-                             context)
+                             defineTime + get_current_time() + ", " +
+                             defineMessage + context)
         self.context.append(prompt)
 
-    def recordResponse(self, response:ChatCompletion, timestamp:str = "Unknown"):
-        defineTime = "Timestamp: "
+    def recordResponse(self, response:ChatCompletion):
         prompt = dict()
         prompt["role"] = "assistant"
-        prompt["content"] = defineTime + timestamp + ", " + response.choices[0].message.content
+        prompt["content"] = str(response.choices[0].message.content)
         self.context.append(prompt)
 
-    def updateMem(self, maxWords:int=500):
+    def updateMem(self):
         final_prompt = []
-        defineSummarize = f"You are maintaining the long-term memory of an AI assistant for a Minecraft server; summarize the conversation into persistent memory, keeping only information useful for future conversations, including user preferences, player identities, important decisions, long-term goals, server-specific facts, and ongoing projects; remove temporary dialogue, casual chat, greetings, small talk, one-time questions, temporary game events, and repeated information; merge duplicates; when memory conflicts with newer information, keep the newer information; output only the concise summarized memory, no longer than {maxWords} words."
+        defineSummarize = f"You are maintaining the long-term memory of an AI assistant for a Minecraft server; summarize the conversation into persistent memory, keeping only information useful for future conversations, including user preferences, player identities, important decisions, long-term goals, server-specific facts, and ongoing projects; remove temporary dialogue, casual chat, greetings, small talk, one-time questions, temporary game events, and repeated information; merge duplicates; when memory conflicts with newer information, keep the newer information; output only the concise summarized memory, no longer than {self.maxMemWords} words."
         sysPrompt = dict()
         sysPrompt["role"] = "system"
         sysPrompt["content"] = defineSummarize
@@ -115,25 +117,8 @@ class Agent:
             extra_body=self.extra_body
         )
         self.recordResponse(response)
-
+        print(final_prompt)
         if response.usage.prompt_cache_miss_tokens > self.contextLimit:
-            print("NEED UPDATE MEM")
-        print(response.choices[0].message.content)
+            print("UPDATING MEM...")
+            self.updateMem()
         return response
-
-
-client = OpenAI(
-    api_key=os.environ.get('DEEPSEEK_API_KEY'),
-    base_url="https://api.deepseek.com")
-
-agent = Agent(client)
-agent.setSystemPrompt("你是Minecraft服务器拉杆服务器的人工智能-一个拉杆，用户会以拉杆来称呼你，"
-                      "你会受到一系列上下文，每个上下文都包含上下文类型，有游戏内事件(Event)，"
-                      "游戏内玩家对话(Chat)，但只有收到请求(Query)时你才会被调用，"
-                      "同时每个上下文也包含发送者信息，例如发送者的玩家id，请根据你对发送者的记忆，"
-                      "进行个性化回复，根据上下文用一两句话简洁的回答用户的问题，保持友善的风格。")
-agent.setKnowledgePrompt("你知道Minecraft的所有知识，你所在的拉杆服务器版本是Java 26.2，"
-                         "ip地址是mc.racer.fund(上海)，当用户从境外连接时也可以使用"
-                         "hkmc.racer.fund(香港)。")
-
-agent.stepPrompt()
