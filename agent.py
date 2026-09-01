@@ -1,8 +1,9 @@
+import json
 import os
-from bdb import Breakpoint
+from typing import Callable
 
-from openai import OpenAI
-from openai.types.chat import ChatCompletion
+from openai import OpenAI, Stream
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 
 from datetime import datetime
 
@@ -15,24 +16,40 @@ def get_current_time() -> str:
     return datetime.now().strftime("%Y-%m-%d-%H-%M")
 
 class Agent:
-    def __init__(self, client:OpenAI = None, model:str = "deepseek-v4-flash", stream:bool=False, reasoning_effort:str = "high", thinking:bool=False):
+    def __init__(
+            self,
+            client_secret:str,
+            model:str = "deepseek-v4-flash",
+            stream:bool = False,
+            reasoning_effort:str = "high",
+            thinking:bool = False,
+            debug:bool = False
+    ):
         extra_body = {"thinking": {"type": "disabled"}}
         if thinking:
             extra_body = {"thinking": {"type": "enabled"}}
+
+        client = OpenAI(
+            api_key=client_secret,
+            base_url="https://api.deepseek.com")
 
         self.client = client
         self.model = model
         self.stream = stream
         self.reasoning_effort = reasoning_effort
         self.extra_body = extra_body
+        self.debug = debug
 
         self.sysPrompt = None
         self.knlgPrompt = None
         self.memPrompt = None
         self.context:list = []
 
-        self.contextLimit = 1000
-        self.maxMemWords = 500
+        self.contex_length_before_compress = 1000
+        self.word_length_before_reply = 100
+        self.__word_length_now = 0
+        self.maxMemWords = 200
+
 
     def setSystemPrompt(self, sysPrompt:str):
         defineSystem = "#This is a persistent instruction that establishes the your role as an assistant, behavioral rules, operational constraints, and response style. Taking precedence over user prompts whenever conflicts arise. Instructions as follows: "
@@ -55,28 +72,59 @@ class Agent:
         prompt["content"] = defineMemory + memPrompt
         self.memPrompt = prompt
 
-    def addContext(self, context:str, role:str = "user", username:str = "Unknown", contextType:str = "Unknown"):
-        defineType = "Context Type: "
-        defineUser = "Sender: "
-        defineTime = "Timestamp: "
-        defineMessage = "Message: "
-        prompt = dict()
-        prompt["role"] = role
+    def addContext(
+            self,
+            message: str,
+            username: str = "Unknown",
+            contextType: str = "Unknown"
+    ):
+        prompt = {
+            "role": "user",
+            "content": (
+                f"Timestamp: {get_current_time()}, "
+                f"Context Type: {contextType}, "
+                f"Sender: {username}, "
+                f"Message: {message}"
+            )
+        }
+
         if username:
             prompt["name"] = username
-        prompt["content"] = (defineType + contextType + ", " +
-                             defineUser + username +", " +
-                             defineTime + get_current_time() + ", " +
-                             defineMessage + context)
         self.context.append(prompt)
 
-    def recordResponse(self, response:ChatCompletion):
-        prompt = dict()
-        prompt["role"] = "assistant"
-        prompt["content"] = str(response.choices[0].message.content)
-        self.context.append(prompt)
 
-    def updateMem(self):
+    def stepPrompt(self) -> ChatCompletion | Stream[ChatCompletionChunk]:
+        final_prompt = []
+        if self.sysPrompt:
+            final_prompt.append(self.sysPrompt)
+        if self.knlgPrompt:
+            final_prompt.append(self.knlgPrompt)
+        if self.memPrompt:
+            final_prompt.append(self.memPrompt)
+        final_prompt += self.context
+
+        if self.debug:
+            print(f"[agent.py]Sending Prompt: {final_prompt}")
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=final_prompt,
+            stream=self.stream,
+            extra_body=self.extra_body
+        )
+
+        if self.debug:
+            print(f"[agent.py]Receiving Completion: {response}")
+
+        assistantRecalls = json.loads(response.choices[0].message.model_dump_json())
+        self.context.append(assistantRecalls)
+
+        # if response.usage.prompt_cache_miss_tokens > self.contex_length_before_compress:
+        #     self.compressContext()
+
+        return response
+
+    def compressContext(self):
         final_prompt = []
         defineSummarize = f"You are maintaining the long-term memory of an AI assistant for a Minecraft server; summarize the conversation into persistent memory, keeping only information useful for future conversations, including user preferences, player identities, important decisions, long-term goals, server-specific facts, and ongoing projects; remove temporary dialogue, casual chat, greetings, small talk, one-time questions, temporary game events, and repeated information; merge duplicates; when memory conflicts with newer information, keep the newer information; output only the concise summarized memory, no longer than {self.maxMemWords} words."
         sysPrompt = dict()
@@ -100,25 +148,6 @@ class Agent:
         self.setMemoryPrompt(newMem)
         self.context: list = []
 
-    def stepPrompt(self) -> ChatCompletion:
-        final_prompt = []
-        if self.sysPrompt:
-            final_prompt.append(self.sysPrompt)
-        if self.knlgPrompt:
-            final_prompt.append(self.knlgPrompt)
-        if self.memPrompt:
-            final_prompt.append(self.memPrompt)
-        final_prompt += self.context
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=final_prompt,
-            stream=self.stream,
-            extra_body=self.extra_body
-        )
-        self.recordResponse(response)
-        print(final_prompt)
-        if response.usage.prompt_cache_miss_tokens > self.contextLimit:
-            print("UPDATING MEM...")
-            self.updateMem()
-        return response
+        if self.debug:
+            print("[agent.py]Compressing Context into memory...")
+            print(f"[agent.py]New memory:{newMem}")
