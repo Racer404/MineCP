@@ -45,12 +45,6 @@ class Agent:
         self.memPrompt = None
         self.context:list = []
 
-        self.contex_length_before_compress = 1000
-        self.word_length_before_reply = 100
-        self.__word_length_now = 0
-        self.maxMemWords = 200
-
-
     def setSystemPrompt(self, sysPrompt:str):
         defineSystem = "#This is a persistent instruction that establishes the your role as an assistant, behavioral rules, operational constraints, and response style. Taking precedence over user prompts whenever conflicts arise. Instructions as follows: "
         prompt = dict()
@@ -124,9 +118,9 @@ class Agent:
 
         return response
 
-    def compressContext(self):
+    def compressContext(self, maxMemWords:int):
         final_prompt = []
-        defineSummarize = f"You are maintaining the long-term memory of an AI assistant for a Minecraft server; summarize the conversation into persistent memory, keeping only information useful for future conversations, including user preferences, player identities, important decisions, long-term goals, server-specific facts, and ongoing projects; remove temporary dialogue, casual chat, greetings, small talk, one-time questions, temporary game events, and repeated information; merge duplicates; when memory conflicts with newer information, keep the newer information; output only the concise summarized memory, no longer than {self.maxMemWords} words."
+        defineSummarize = f"You are maintaining the long-term memory of an AI assistant for a Minecraft server; summarize the conversation into persistent memory, keeping only information useful for future conversations, including user preferences, player identities, important decisions, long-term goals, server-specific facts, and ongoing projects; remove temporary dialogue, casual chat, greetings, small talk, one-time questions, temporary game events, and repeated information; merge duplicates; when memory conflicts with newer information, keep the newer information; output only the concise summarized memory, no longer than {maxMemWords} words."
         sysPrompt = dict()
         sysPrompt["role"] = "system"
         sysPrompt["content"] = defineSummarize
