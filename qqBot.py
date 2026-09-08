@@ -74,7 +74,7 @@ class Bot:
 
             if op_ == 10:
                 if self.debug:
-                    print("[qqBot.py] Handshake from server")
+                    print("[qqBot.py] Handshake request from server")
                 self.agreed_heartbeat_interval = int(json.loads(message)['d']['heartbeat_interval'] / 1000)
                 authentication_payload = {
                     "op": 2,
@@ -85,8 +85,6 @@ class Bot:
                     }
                 }
                 socket.send(json.dumps(authentication_payload))
-                if self.debug:
-                    print("[qqBot.py] Handshake authentication sent")
 
             elif op_ == 0:
                 if self.debug:

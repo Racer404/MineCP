@@ -1,5 +1,4 @@
 import json
-import os
 from typing import Callable
 
 from openai import OpenAI, Stream
@@ -25,6 +24,7 @@ class Agent:
             thinking:bool = False,
             debug:bool = False
     ):
+
         extra_body = {"thinking": {"type": "disabled"}}
         if thinking:
             extra_body = {"thinking": {"type": "enabled"}}
@@ -44,6 +44,9 @@ class Agent:
         self.knlgPrompt = None
         self.memPrompt = None
         self.context:list = []
+
+        self.tools = []
+        self.tool_functions = {}
 
     def setSystemPrompt(self, sysPrompt:str):
         defineSystem = "#This is a persistent instruction that establishes the your role as an assistant, behavioral rules, operational constraints, and response style. Taking precedence over user prompts whenever conflicts arise. Instructions as follows: "
@@ -86,6 +89,33 @@ class Agent:
             prompt["name"] = username
         self.context.append(prompt)
 
+    def addTool(
+            self,
+            name: str,
+            description: str,
+            function: Callable,
+            parameters: dict|None = None
+    ):
+        if parameters:
+            tool = {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": description,
+                    "parameters": parameters
+                }
+            }
+        else:
+            tool = {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": description
+                }
+            }
+
+        self.tools.append(tool)
+        self.tool_functions[name] = function
 
     def stepPrompt(self) -> ChatCompletion | Stream[ChatCompletionChunk]:
         final_prompt = []
@@ -103,6 +133,7 @@ class Agent:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=final_prompt,
+            tools=self.tools,
             stream=self.stream,
             extra_body=self.extra_body
         )
@@ -113,10 +144,30 @@ class Agent:
         assistantRecalls = json.loads(response.choices[0].message.model_dump_json())
         self.context.append(assistantRecalls)
 
-        # if response.usage.prompt_cache_miss_tokens > self.contex_length_before_compress:
-        #     self.compressContext()
+        while True:
+            if response.choices[0].finish_reason == 'tool_calls':
+                for tool_call in response.choices[0].message.tool_calls:
+                    if self.debug:
+                        print(f"[agent.py]Calling function: {tool_call.function.name}")
+                    tool_function = self.tool_functions[tool_call.function.name]
+
+                    arguments = json.loads(tool_call.function.arguments)
+                    tool_result = tool_function(**arguments)
+
+                    toolRecalls = {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": tool_result,
+                    }
+                    self.context.append(toolRecalls)
+
+
+                self.stepPrompt()
+            else:
+                break
 
         return response
+
 
     def compressContext(self, maxMemWords:int):
         final_prompt = []
