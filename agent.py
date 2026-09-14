@@ -118,55 +118,51 @@ class Agent:
         self.tool_functions[name] = function
 
     def stepPrompt(self) -> ChatCompletion | Stream[ChatCompletionChunk]:
-        final_prompt = []
-        if self.sysPrompt:
-            final_prompt.append(self.sysPrompt)
-        if self.knlgPrompt:
-            final_prompt.append(self.knlgPrompt)
-        if self.memPrompt:
-            final_prompt.append(self.memPrompt)
-        final_prompt += self.context
-
-        if self.debug:
-            print(f"[agent.py]Sending Prompt: {final_prompt}")
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=final_prompt,
-            tools=self.tools,
-            stream=self.stream,
-            extra_body=self.extra_body
-        )
-
-        if self.debug:
-            print(f"[agent.py]Receiving Completion: {response}")
-
-        assistantRecalls = json.loads(response.choices[0].message.model_dump_json())
-        self.context.append(assistantRecalls)
 
         while True:
+            final_prompt = []
+
+            if self.sysPrompt:
+                final_prompt.append(self.sysPrompt)
+            if self.knlgPrompt:
+                final_prompt.append(self.knlgPrompt)
+            if self.memPrompt:
+                final_prompt.append(self.memPrompt)
+            final_prompt += self.context
+
+            if self.debug:
+                print(f"[agent.py]Sending Prompt: {final_prompt}")
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=final_prompt,
+                tools=self.tools,
+                stream=self.stream,
+                extra_body=self.extra_body
+            )
+
+            if self.debug:
+                print(f"[agent.py]Receiving Completion: {response}")
+
+            assistantRecalls = json.loads(response.choices[0].message.model_dump_json())
+            self.context.append(assistantRecalls)
+
             if response.choices[0].finish_reason == 'tool_calls':
                 for tool_call in response.choices[0].message.tool_calls:
                     if self.debug:
                         print(f"[agent.py]Calling function: {tool_call.function.name}")
                     tool_function = self.tool_functions[tool_call.function.name]
-
                     arguments = json.loads(tool_call.function.arguments)
                     tool_result = tool_function(**arguments)
-
-                    toolRecalls = {
+                    tool_recalls = {
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "content": tool_result,
                     }
-                    self.context.append(toolRecalls)
+                    self.context.append(tool_recalls)
 
-
-                self.stepPrompt()
-            else:
-                break
-
-        return response
+            elif response.choices[0].finish_reason == 'stop':
+                return response
 
 
     def compressContext(self, maxMemWords:int):

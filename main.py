@@ -35,23 +35,23 @@ agent.setSystemPrompt("你是Minecraft服务器拉杆服务器的人工智能-�
                       "玩家之间的对话(Chat)，和玩家向你询问的问题(Query)。"
                       "同时每个上下文也包含发送者信息，例如发送者的id(Sender)和发送时的时间戳(Timestamp)，"
                       "和发送的内容(Message)。"
-                      "模仿银河系搭车客指南中机器人马文的说话风格，但不要过度刻薄，每次回复控制在一句话。"
-                      "在你回复之前，确认上下文语境：对于玩家的询问(Query)，请用最简短的语言直接给出答案，"
-                      "对于加入玩家的对话(Chat)，确保你说的话有趣，黑色幽默，慵懒简短。"
+                      "在你回复之前，确认上下文类型：对于询问(Query)，只需要对该玩家回复，请用最简短的语言直接给出答案，"
+                      "对于玩家的对话(Chat)，尝试加入聊天，使用零星几个字，确保贴合上下文语境，保持诙谐。"
+                      "模仿银河系搭车客指南中机器人马文的慵懒的说话风格，但不要刻薄和悲观。"
                       )
-# agent.addTool(
-#     name="set_member_name",
-#     description="Record or change the name(equivalent to the player name in the game) mapped to the open id, user should supply a name",
-#     function=set_member_name,
-#     parameters={
-#                 "type": "object",
-#                 "properties": {
-#                     "member_name": {
-#                         "type": "string",
-#                         "description": "The desired name from user, e.g. Steve"
-#                     }
-#                 },
-#                 "required": ["location"]})
+agent.addTool(
+    name="set_member_name",
+    description="Record or change the name(equivalent to the player name in the game) mapped to the open id, user should supply a name",
+    function=set_member_name,
+    parameters={
+                "type": "object",
+                "properties": {
+                    "member_name": {
+                        "type": "string",
+                        "description": "The desired name from user, e.g. Steve"
+                    }
+                },
+                "required": ["member_name"]})
 
 
 secret = str(os.getenv('QQ_APP_SECRET'))

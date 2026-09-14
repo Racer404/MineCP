@@ -8,13 +8,15 @@ import json
 
 class Bot:
     def __init__(self, app_id:str='', client_secret:str='', debug:bool=False):
+        self.require_reconnect = False
         self.app_id = app_id
         self.client_secret = client_secret
         self.access_token = None
         self.token_expiresAt = None
         self.token_safety_time_margin = 50.
         self.agreed_heartbeat_interval = 60
-        self.heartbeat_payload_d = None
+        self.current_message_sequence = None
+        self.socket_session_id = None
         self.group_at_message_callback:Callable[[str],None] | None = None
         self.group_message_callback:Callable[[str],None] | None = None
         self.debug = debug
@@ -70,70 +72,113 @@ class Bot:
 
     def listenToSocket(self, url):
         def on_message(socket, message):
-            op_ = json.loads(message)['op']
+            data = json.loads(message)
+            op_ = data.get('op')
 
-            if op_ == 10:
-                if self.debug:
-                    print("[qqBot.py] Handshake request from server")
-                self.agreed_heartbeat_interval = int(json.loads(message)['d']['heartbeat_interval'] / 1000)
-                authentication_payload = {
-                    "op": 2,
-                    "d": {
-                        "token": f"QQBot {self.access_token}",
-                        "intents": 33554432,
-                        "shard": [0, 1]
-                    }
-                }
-                socket.send(json.dumps(authentication_payload))
+            # CRITICAL: Always update the sequence number for ALL OpCode 0 events
+            if op_ == 0:
+                if "s" in data and data["s"] is not None:
+                    self.current_message_sequence = data["s"]
 
-            elif op_ == 0:
                 if self.debug:
                     print("[qqBot.py] Dispatch from server")
-                t_ = json.loads(message)['t']
+                t_ = data.get('t')
 
                 if t_ == 'READY':
+                    self.socket_session_id = data["d"]["session_id"]
                     if self.debug:
-                        print("[qqBot.py] Handshake successfully")
-                    self.heartbeat_payload_d = "null"
+                        print(f"[qqBot.py] Handshake successfully, session id = {self.socket_session_id}")
 
                 elif t_ == 'GROUP_AT_MESSAGE_CREATE':
                     if self.debug:
                         print("[qqBot.py] GROUP_AT_MESSAGE_CREATE")
-                    self.heartbeat_payload_d = json.loads(message)['s']
                     if self.group_at_message_callback is not None:
                         self.group_at_message_callback(message)
 
                 elif t_ == 'GROUP_MESSAGE_CREATE':
                     if self.debug:
                         print("[qqBot.py] GROUP_MESSAGE_CREATE")
-                    self.heartbeat_payload_d = json.loads(message)['s']
                     if self.group_message_callback is not None:
                         self.group_message_callback(message)
+
+            elif op_ == 10:
+                if self.debug:
+                    print("[qqBot.py] Handshake request from server")
+                self.agreed_heartbeat_interval = int(data['d']['heartbeat_interval'] / 1000)
+
+                # Check if we should RESUME or IDENTIFY
+                if self.require_reconnect and hasattr(self, 'socket_session_id'):
+                    if self.debug:
+                        print("[qqBot.py] Sending Resume payload (OpCode 6)...")
+                    self.update_access_token()
+                    payload = {
+                        "op": 6,
+                        "d": {
+                            "token": f"QQBot {self.access_token}",
+                            "session_id": self.socket_session_id,
+                            "seq": self.current_message_sequence
+                        }
+                    }
+                    self.require_reconnect = False  # Reset flag after resuming
+                else:
+                    if self.debug:
+                        print("[qqBot.py] Sending Identify payload (OpCode 2)...")
+                    self.current_message_sequence = None  # Initialize properly as None, not "null"
+                    payload = {
+                        "op": 2,
+                        "d": {
+                            "token": f"QQBot {self.access_token}",
+                            "intents": 33554432,
+                            "shard": [0, 1]
+                        }
+                    }
+                socket.send(json.dumps(payload))
+
             elif op_ == 11:
-                print("[qqBot.py] Pong!")
+                if self.debug:
+                    print("[qqBot.py] Pong!")
+
+            elif op_ == 7:
+                if self.debug:
+                    print("[qqBot.py] Server request reconnect. Closing connection to trigger resume...")
+                self.require_reconnect = True
+                socket.close()  # This breaks ws.run_forever() and starts the reconnect loop
 
             if self.debug:
                 print(f"[qqBot.py] Message from socket: {message}")
 
         def heartbeat(socket):
             while True:
-                time.sleep(self.agreed_heartbeat_interval)
+                # Use a default fallback if interval isn't set yet
+                interval = getattr(self, 'agreed_heartbeat_interval', 30)
+                time.sleep(interval)
 
-                if self.heartbeat_payload_d:
-                    heartbeat_payload = {
-                        "op": 1,
-                        "d": self.heartbeat_payload_d
-                    }
+                # Send heartbeat with current sequence (can be None)
+                heartbeat_payload = {
+                    "op": 1,
+                    "d": getattr(self, 'current_message_sequence', None)
+                }
+                try:
                     socket.send(json.dumps(heartbeat_payload))
-                    print("[qqBot.py] Ping!")
+                    if self.debug:
+                        print("[qqBot.py] Ping!")
+                except Exception:
+                    break  # Exit thread cleanly if socket is dead
 
-        ws = websocket.WebSocketApp(url)
-        ws.on_message = on_message
+        # Continuous reconnection loop
+        while True:
+            ws = websocket.WebSocketApp(url)
+            ws.on_message = on_message
 
-        threading.Thread(
-            target=heartbeat,
-            args=(ws,),
-            daemon=True
-        ).start()
+            threading.Thread(
+                target=heartbeat,
+                args=(ws,),
+                daemon=True
+            ).start()
 
-        ws.run_forever()
+            if self.debug:
+                print("[qqBot.py] Connecting to WebSocket...")
+            ws.run_forever()
+
+            # Short fallback delay before trying to reconnect to avoid spamming the gateway
+            time.sleep(2)
