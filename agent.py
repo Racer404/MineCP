@@ -43,10 +43,22 @@ class Agent:
         self.sysPrompt = None
         self.knlgPrompt = None
         self.memPrompt = None
+        self.compressMemoryWords = 500
+        self.maxContextTokens = 10000
         self.context:list = []
 
         self.tools = []
         self.tool_functions = {}
+
+        try:
+            with open("memory.txt", "r", encoding="utf-8") as f:
+                saved_memory = f.read()
+
+            if saved_memory.strip():
+                self.setMemoryPrompt(saved_memory)
+
+        except FileNotFoundError:
+            pass
 
     def setSystemPrompt(self, sysPrompt:str):
         defineSystem = "#This is a persistent instruction that establishes the your role as an assistant, behavioral rules, operational constraints, and response style. Taking precedence over user prompts whenever conflicts arise. Instructions as follows: "
@@ -117,7 +129,7 @@ class Agent:
         self.tools.append(tool)
         self.tool_functions[name] = function
 
-    def stepPrompt(self) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    def stepPrompt(self, state_object:dict=None) -> ChatCompletion | Stream[ChatCompletionChunk]:
 
         while True:
             final_prompt = []
@@ -153,7 +165,10 @@ class Agent:
                         print(f"[agent.py]Calling function: {tool_call.function.name}")
                     tool_function = self.tool_functions[tool_call.function.name]
                     arguments = json.loads(tool_call.function.arguments)
+                    if state_object:
+                        arguments.update(state_object)
                     tool_result = tool_function(**arguments)
+
                     tool_recalls = {
                         "role": "tool",
                         "tool_call_id": tool_call.id,
@@ -161,16 +176,41 @@ class Agent:
                     }
                     self.context.append(tool_recalls)
 
+
             elif response.choices[0].finish_reason == 'stop':
+
+                prompt_tokens = response.usage.prompt_tokens
+
+                if self.debug:
+                    print(
+                        f"[agent.py]Prompt tokens: {prompt_tokens}"
+                    )
+
+                if prompt_tokens >= self.maxContextTokens:
+                    self.compressContext()
+
                 return response
 
-
-    def compressContext(self, maxMemWords:int):
+    def compressContext(self):
         final_prompt = []
-        defineSummarize = f"You are maintaining the long-term memory of an AI assistant for a Minecraft server; summarize the conversation into persistent memory, keeping only information useful for future conversations, including user preferences, player identities, important decisions, long-term goals, server-specific facts, and ongoing projects; remove temporary dialogue, casual chat, greetings, small talk, one-time questions, temporary game events, and repeated information; merge duplicates; when memory conflicts with newer information, keep the newer information; output only the concise summarized memory, no longer than {maxMemWords} words."
-        sysPrompt = dict()
-        sysPrompt["role"] = "system"
-        sysPrompt["content"] = defineSummarize
+
+        defineSummarize = (
+            f"You are maintaining the long-term memory of an AI assistant "
+            f"for a Minecraft server; summarize the conversation into persistent "
+            f"memory, keeping only information useful for future conversations, "
+            f"including user preferences, player identities, important decisions, "
+            f"long-term goals, server-specific facts, and ongoing projects; "
+            f"remove temporary dialogue, casual chat, greetings, small talk, "
+            f"one-time questions, temporary game events, and repeated information; "
+            f"merge duplicates; when memory conflicts with newer information, "
+            f"keep the newer information; output only the concise summarized memory, "
+            f"no longer than {self.compressMemoryWords} words."
+        )
+
+        sysPrompt = {
+            "role": "system",
+            "content": defineSummarize
+        }
 
         final_prompt.append(sysPrompt)
 
@@ -185,10 +225,22 @@ class Agent:
             stream=self.stream,
             extra_body=self.extra_body
         )
+
         newMem = str(response.choices[0].message.content)
+
+        # Save compressed memory to a local file
+        memory_file = "memory.txt"
+
+        with open(memory_file, "w", encoding="utf-8") as f:
+            f.write(newMem)
+
+        # Update the agent's memory prompt
         self.setMemoryPrompt(newMem)
+
+        # Clear the conversation context
         self.context: list = []
 
         if self.debug:
             print("[agent.py]Compressing Context into memory...")
             print(f"[agent.py]New memory:{newMem}")
+            print(f"[agent.py]Memory saved to: {memory_file}")

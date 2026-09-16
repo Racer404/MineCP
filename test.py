@@ -1,10 +1,17 @@
 import os
+import json
+import requests
 
-from qqBot import Bot
+from agent import Agent
 
-secret = str(os.getenv('QQ_APP_SECRET'))
-bot = Bot(app_id='1905231300', client_secret=secret, debug=True)
-bot.update_access_token()
+def get_player_stats(member_name:str, base_url: str = "http://localhost:13579", **kwargs) -> str:
+    response = requests.get(
+        f"{base_url}/playerstats",
+        params={"name": member_name},
+        timeout=5
+    )
 
-bot.listenToSocket(bot.getWebSocketTerminal())
+    response.raise_for_status()
+    return json.dumps(response.json())
+
 breakpoint()
