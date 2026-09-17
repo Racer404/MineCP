@@ -111,7 +111,7 @@ agent.addTool(
 agent.addTool(
     name="pat_player",
     description="Pat a player in the game, user should supply a name",
-    function=get_player_stats,
+    function=pat_player,
     parameters={
                 "type": "object",
                 "properties": {
