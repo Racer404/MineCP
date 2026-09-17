@@ -31,13 +31,6 @@ def set_member_name(
     return f"added {member_name}"
 
 def get_online_players(base_url: str = "http://localhost:13579", **kwargs) -> str:
-    """
-    Get currently online players from the Minecraft server.
-
-    Returns:
-        dict: JSON response from the REST API.
-    """
-
     response = requests.get(
         f"{base_url}/onlineplayers",
         timeout=5
@@ -52,7 +45,15 @@ def get_player_stats(member_name:str, base_url: str = "http://localhost:13579", 
         params={"name": member_name},
         timeout=5
     )
+    response.raise_for_status()
+    return json.dumps(response.json())
 
+def pat_player(member_name:str, base_url: str = "http://localhost:13579", **kwargs) -> str:
+    response = requests.get(
+        f"{base_url}/patplayer",
+        params={"name": member_name},
+        timeout=5
+    )
     response.raise_for_status()
     return json.dumps(response.json())
 
@@ -103,6 +104,20 @@ agent.addTool(
                     "member_name": {
                         "type": "string",
                         "description": "The queried player name, e.g. Steve (If user made a typo, you should correct the player name based on your memory)"
+                    }
+                },
+                "required": ["member_name"]})
+
+agent.addTool(
+    name="pat_player",
+    description="Pat a player in the game, user should supply a name",
+    function=get_player_stats,
+    parameters={
+                "type": "object",
+                "properties": {
+                    "member_name": {
+                        "type": "string",
+                        "description": "The requested player name, e.g. Steve (If user made a typo, you should correct the player name based on your memory)"
                     }
                 },
                 "required": ["member_name"]})
