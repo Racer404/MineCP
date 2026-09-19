@@ -61,6 +61,7 @@ class Bot:
         return response
 
     def sendGroupRawText(self, group_openid:str, content:str):
+        self.update_access_token()
         api = f"https://api.bot.qq.com/v2/groups/{group_openid}/messages"
         header = {"Authorization": "QQBot " + self.access_token}
         payload = {
