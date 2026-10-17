@@ -129,7 +129,7 @@ class Agent:
         self.tools.append(tool)
         self.tool_functions[name] = function
 
-    def stepPrompt(self, state_object:dict=None) -> ChatCompletion | Stream[ChatCompletionChunk]:
+    def stepPrompt(self, state_object:dict|None = None) -> ChatCompletion | Stream[ChatCompletionChunk]:
 
         while True:
             final_prompt = []
