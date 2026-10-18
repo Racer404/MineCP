@@ -3,6 +3,8 @@ import json
 from agent import Agent
 
 import global_params
+from qqBot import Bot as QQBot
+from gameBot import Bot as GameBot
 
 def get_player_whitelisted_status(member_name:str, base_url: str = "http://localhost:13579") -> str:
     response = requests.get(
@@ -14,11 +16,29 @@ def get_player_whitelisted_status(member_name:str, base_url: str = "http://local
     if_whitelist = response.json()["whitelisted"]
     return if_whitelist
 
-def set_member_name(
+def group_message_game(call_source: str, message: str, game_bot: GameBot|None = None, **kwargs) -> str:
+    if call_source == "game":
+        return "[error] calling a QQ group only function while in game"
+
+    game_bot.sendGameRawText(message)
+    return f"message forwarded"
+
+def game_message_group(call_source: str, message: str, qq_bot: QQBot|None = None, **kwargs) -> str:
+    if call_source == "group":
+        return "[error] calling a game only function while in QQ group"
+
+    qq_bot.sendGroupRawText(message)
+    return f"message forwarded"
+
+def bind_member_name(
     member_name: str,
-    member_openid: str,
+    call_source: str,
+    member_openid: str|None = None,
     json_file: str = "members.json",
     **kwargs):
+
+    if call_source == "game":
+        return "[error] calling a QQ group only function while in game"
 
     if not get_player_whitelisted_status(member_name):
         return f"Player {member_name} not whitelisted"
@@ -29,7 +49,11 @@ def set_member_name(
 
     return f"added {member_name}"
 
-def get_online_players(base_url: str = "http://localhost:13579", **kwargs) -> str:
+def get_online_players(call_source: str, base_url: str = "http://localhost:13579", **kwargs) -> str:
+
+    if call_source == "game":
+        return "[error] calling a QQ group only function while in game"
+
     response = requests.get(
         f"{base_url}/onlineplayers",
         timeout=5
@@ -38,7 +62,7 @@ def get_online_players(base_url: str = "http://localhost:13579", **kwargs) -> st
     response.raise_for_status()
     return json.dumps(response.json())
 
-def get_player_stats(member_name:str, base_url: str = "http://localhost:13579", **kwargs) -> str:
+def get_player_stats(call_source: str, member_name:str, base_url: str = "http://localhost:13579", **kwargs) -> str:
     response = requests.get(
         f"{base_url}/playerstats",
         params={"name": member_name},
@@ -47,7 +71,7 @@ def get_player_stats(member_name:str, base_url: str = "http://localhost:13579", 
     response.raise_for_status()
     return json.dumps(response.json())
 
-def pat_player(member_name:str, base_url: str = "http://localhost:13579", **kwargs) -> str:
+def pat_player(call_source: str, member_name:str, base_url: str = "http://localhost:13579", **kwargs) -> str:
     response = requests.get(
         f"{base_url}/patplayer",
         params={"name": member_name},
@@ -58,9 +82,9 @@ def pat_player(member_name:str, base_url: str = "http://localhost:13579", **kwar
 
 def inject_tools(agent: Agent):
     agent.addTool(
-        name="set_member_name",
-        description="Record or change the name(equivalent to the player name in the game), user should supply a name",
-        function=set_member_name,
+        name="bind_member_name",
+        description="Record or change the bind name(equivalent to the player name in the game), user should supply a name",
+        function=bind_member_name,
         parameters={
             "type": "object",
             "properties": {
@@ -79,7 +103,7 @@ def inject_tools(agent: Agent):
 
     agent.addTool(
         name="get_player_stats",
-        description="Query the stats of a player in game, result including player player location, the biome, held items and hp and hunger, user should supply a name",
+        description="Query the stats of a player in game, user should supply a name",
         function=get_player_stats,
         parameters={
             "type": "object",
@@ -104,3 +128,33 @@ def inject_tools(agent: Agent):
                 }
             },
             "required": ["member_name"]})
+
+    agent.addTool(
+        name="group_message_game",
+        description="help to forward information from QQ group to game, user should give the information needs to be forward",
+        function=group_message_game,
+        parameters={
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "The forwarding message or information"
+                }
+            },
+            "required": ["message"]}
+    )
+
+    agent.addTool(
+        name="game_message_group",
+        description="help to forward message from game to QQ group, user should give the information needs to be forward",
+        function=game_message_group,
+        parameters={
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "The forwarding message or information"
+                }
+            },
+            "required": ["message"]}
+    )
