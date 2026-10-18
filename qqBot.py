@@ -7,17 +7,17 @@ import time
 import json
 
 class Bot:
-    def __init__(self, app_id:str='', client_secret:str='', debug:bool=False):
+    def __init__(self, app_id:str='', client_secret:str='', group_openid:str='', debug:bool=False):
         self.require_reconnect = False
         self.app_id = app_id
         self.client_secret = client_secret
+        self.group_openid = group_openid
         self.access_token = None
         self.token_expiresAt = None
         self.token_safety_time_margin = 50.
         self.agreed_heartbeat_interval = 60
         self.current_message_sequence = None
         self.socket_session_id = None
-        self.group_at_message_callback:Callable[[str],None] | None = None
         self.group_message_callback:Callable[[str],None] | None = None
         self.debug = debug
 
@@ -49,20 +49,9 @@ class Bot:
         terminal = response.json()['url']
         return terminal
 
-    def replyGroupRawText(self, group_openid:str, content:str, msg_id:str):
-        api = f"https://api.bot.qq.com/v2/groups/{group_openid}/messages"
-        header = {"Authorization": "QQBot " + self.access_token}
-        payload = {
-            "msg_type": 0,
-            "content": content,
-            "msg_id" : msg_id
-        }
-        response = requests.post(api, headers=header, json=payload)
-        return response
-
-    def sendGroupRawText(self, group_openid:str, content:str):
+    def sendGroupRawText(self, content:str):
         self.update_access_token()
-        api = f"https://api.bot.qq.com/v2/groups/{group_openid}/messages"
+        api = f"https://api.bot.qq.com/v2/groups/{self.group_openid}/messages"
         header = {"Authorization": "QQBot " + self.access_token}
         payload = {
             "msg_type": 0,
@@ -90,15 +79,7 @@ class Bot:
                     if self.debug:
                         print(f"[qqBot.py] Handshake successfully, session id = {self.socket_session_id}")
 
-                elif t_ == 'GROUP_AT_MESSAGE_CREATE':
-                    if self.debug:
-                        print("[qqBot.py] GROUP_AT_MESSAGE_CREATE")
-                    if self.group_at_message_callback is not None:
-                        self.group_at_message_callback(message)
-
                 elif t_ == 'GROUP_MESSAGE_CREATE':
-                    if self.debug:
-                        print("[qqBot.py] GROUP_MESSAGE_CREATE")
                     if self.group_message_callback is not None:
                         self.group_message_callback(message)
 
