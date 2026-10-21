@@ -16,6 +16,23 @@ def get_player_whitelisted_status(member_name:str, base_url: str = "http://local
     if_whitelist = response.json()["whitelisted"]
     return if_whitelist
 
+def search_internet(query: str, ori_question: str, **kwargs) -> str:
+    breakpoint()
+    auth = f"Bearer {global_params.deepseek_secret}"
+    response = requests.post(
+        "https://api.deepseek.com/v1/tools/search",
+        headers={
+            "Authorization": auth,
+        },
+        json={
+            "query": query,
+            "ori_question": ori_question,
+        }
+    )
+    response.raise_for_status()
+    breakpoint()
+    return json.dumps(response.json())
+
 def group_message_game(call_source: str, message: str, game_bot: GameBot|None = None, **kwargs) -> str:
     if call_source == "game":
         return "[error] calling a QQ group only function while in game"
@@ -49,11 +66,7 @@ def bind_member_name(
 
     return f"added {member_name}"
 
-def get_online_players(call_source: str, base_url: str = "http://localhost:13579", **kwargs) -> str:
-
-    if call_source == "game":
-        return "[error] calling a QQ group only function while in game"
-
+def get_online_players(base_url: str = "http://localhost:13579", **kwargs) -> str:
     response = requests.get(
         f"{base_url}/onlineplayers",
         timeout=5
@@ -62,7 +75,7 @@ def get_online_players(call_source: str, base_url: str = "http://localhost:13579
     response.raise_for_status()
     return json.dumps(response.json())
 
-def get_player_stats(call_source: str, member_name:str, base_url: str = "http://localhost:13579", **kwargs) -> str:
+def get_player_stats(member_name:str, base_url: str = "http://localhost:13579", **kwargs) -> str:
     response = requests.get(
         f"{base_url}/playerstats",
         params={"name": member_name},
@@ -71,7 +84,7 @@ def get_player_stats(call_source: str, member_name:str, base_url: str = "http://
     response.raise_for_status()
     return json.dumps(response.json())
 
-def pat_player(call_source: str, member_name:str, base_url: str = "http://localhost:13579", **kwargs) -> str:
+def pat_player(member_name:str, base_url: str = "http://localhost:13579", **kwargs) -> str:
     response = requests.get(
         f"{base_url}/patplayer",
         params={"name": member_name},
@@ -103,7 +116,7 @@ def inject_tools(agent: Agent):
 
     agent.addTool(
         name="get_player_stats",
-        description="Query the stats of a player in game, user should supply a name",
+        description="Query the stats(Position, Biome, HP, Held_items) of a player in game, user should supply a name",
         function=get_player_stats,
         parameters={
             "type": "object",
@@ -114,6 +127,29 @@ def inject_tools(agent: Agent):
                 }
             },
             "required": ["member_name"]})
+
+    agent.addTool(
+        name="search_internet",
+        description="Search API finds web pages for a query and returns structured results.",
+        function=search_internet,
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query must contain 1 to 128 Unicode characters, cannot be all whitespace,"
+                                   "Query Operators: Preserve search operators in the query. Support site: (include domains), "
+                                   "-site: (exclude domains), -term (exclude terms), \"phrase\" (exact match), -\"phrase\" "
+                                   "(exclude exact phrase), lang: (filter languages), after: (set start date), and before: "
+                                   "(set end date). Combine operators as needed; use OR to separate alternative domain restrictions. For example: "
+                                   "DeepSeek site:github.com OR site:huggingface.co lang:en after:2025"
+                },
+                "ori_question": {
+                    "type": "string",
+                    "description": "The user's original question that triggered the search, between 1 and 128 characters, to improve query understanding."
+                }
+            },
+            "required": ["query","ori_question"]})
 
     agent.addTool(
         name="pat_player",

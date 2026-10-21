@@ -16,9 +16,9 @@ else:
     with open("members.json", "w", encoding="utf-8") as f:
         json.dump(global_params.member_mappings, f, ensure_ascii=False, indent=4)
 
+global_params.deepseek_secret = str(os.environ.get('DEEPSEEK_API_KEY'))
 
-deepseek_secret = str(os.environ.get('DEEPSEEK_API_KEY'))
-agent = Agent(client_secret=deepseek_secret, thinking=True, debug=True)
+agent = Agent(client_secret=global_params.deepseek_secret, thinking=True, debug=True)
 agent.setSystemPrompt("你是Minecraft拉杆服务器的人工智能-一个拉杆，你同时连接了mc服务器和QQ群两个环境。"
                       "你会受到一系列上下文，每个上下文都包含上下文类型(Context Type)，有游戏内事件(Event)，"
                       "玩家之间的对话(Chat)，和玩家向你询问的问题(Query)。"
