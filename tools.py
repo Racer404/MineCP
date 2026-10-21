@@ -17,7 +17,6 @@ def get_player_whitelisted_status(member_name:str, base_url: str = "http://local
     return if_whitelist
 
 def search_internet(query: str, ori_question: str, **kwargs) -> str:
-    breakpoint()
     auth = f"Bearer {global_params.deepseek_secret}"
     response = requests.post(
         "https://api.deepseek.com/v1/tools/search",
@@ -27,10 +26,10 @@ def search_internet(query: str, ori_question: str, **kwargs) -> str:
         json={
             "query": query,
             "ori_question": ori_question,
+            "count": 3
         }
     )
     response.raise_for_status()
-    breakpoint()
     return json.dumps(response.json())
 
 def group_message_game(call_source: str, message: str, game_bot: GameBot|None = None, **kwargs) -> str:
